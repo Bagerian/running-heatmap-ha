@@ -1,5 +1,21 @@
 # Running Heatmap
 
+## Home Assistant Add-on Installation
+
+This repository acts as a Home Assistant Add-on Repository. To install the Running Heatmap add-on:
+
+1. Navigate to your Home Assistant instance.
+2. Go to **Settings** -> **Add-ons** -> **Add-on Store**.
+3. Click the three dots (menu) in the top right corner and select **Repositories**.
+4. Enter the URL of this repository: `https://github.com/Bagerian/heatmap` and click **Add**.
+5. Once the repository is added, scroll down or search for **Running Heatmap** in the Add-on Store.
+6. Click on it and select **Install**.
+
+*Alternatively, click the button below if you have My Home Assistant configured:*
+
+[![Open your Home Assistant instance and show the add-on store.](https://my.home-assistant.io/badges/supervisor_store.svg)](https://my.home-assistant.io/redirect/supervisor_store/)
+
+
 Writeup: [akanz.de/posts/running-heatmap](https://www.akanz.de/posts/running-heatmap/). Original [video](https://youtu.be/PA8d4u5T4BM?si=83GTMI449kCsgb4B) — shared by request, since extended.
 
 Turns a Strava data export (and optionally an intervals.icu API key) into an interactive heatmap. Renders sharply at every zoom from continent view down to street level. No live API needed for the base case — just the zip Strava lets you download.
