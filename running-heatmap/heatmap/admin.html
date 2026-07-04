@@ -71,79 +71,11 @@
   /* ── Progress bar ── */
   #regen-progress { display:none; height:3px; background:#1a1a1a; }
   #regen-bar { height:100%; width:0%; background:var(--green); transition:width 0.4s; }
-<title>Heatmap admin</title>
-<style>
-  :root {
-    --bg: #111;
-    --panel: rgba(20,20,20,0.94);
-    --border: rgba(255,255,255,0.08);
-    --muted: #888;
-    --fg: #eee;
-    --accent: #ffb14b;
-    --warn: #ff6b6b;
-  }
-  html, body {
-    margin: 0; padding: 0; background: var(--bg); color: var(--fg);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 13px;
-  }
-  header {
-    position: sticky; top: 0; z-index: 10;
-    background: var(--panel); border-bottom: 1px solid var(--border);
-    padding: 10px 16px;
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-  }
-  header h1 { margin: 0; font-size: 15px; font-weight: 600; }
-  header .stats { color: var(--muted); margin-left: auto; font-size: 12px; }
-  input[type=search], select {
-    background: #1a1a1a; color: var(--fg);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 5px 8px; font-size: 13px;
-    font-family: inherit;
-  }
-  input[type=search] { width: 240px; }
-  table {
-    width: 100%; border-collapse: collapse; font-size: 12px;
-  }
-  thead { position: sticky; top: 48px; z-index: 5; background: #181818; }
-  th, td {
-    padding: 6px 10px; text-align: left;
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  th {
-    color: var(--muted); font-weight: 600; font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.04em;
-    cursor: pointer;
-  }
-  th.sortable:hover { color: var(--fg); }
-  tr.excluded td { color: #555; text-decoration: line-through; }
-  td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; }
-  td.actions { text-align: right; }
-  .src { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
-  .src-strava { background: #4a2e0a; color: #ffba76; }
-  .src-intervals { background: #0a3c4a; color: #76d3ff; }
-  button {
-    background: #222; color: var(--fg);
-    border: 1px solid var(--border); border-radius: 6px;
-    padding: 3px 9px; font-size: 11px; cursor: pointer;
-    font-family: inherit;
-  }
-  button:hover { background: #2a2a2a; border-color: rgba(255,255,255,0.20); }
-  button.danger { color: var(--warn); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  td a { color: var(--accent); text-decoration: none; }
-  td a:hover { text-decoration: underline; }
-  tr.excluded td a { color: #666; }
-  .hint { color: var(--muted); font-size: 11px; padding: 10px 16px; line-height: 1.5; }
-  .hint code { background: #1a1a1a; padding: 1px 5px; border-radius: 3px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🗺 Running Heatmap — Activity Admin</h1>
-  <h1>Activity admin</h1>
   <input type="search" id="filter" placeholder="filter by name / id…">
   <select id="src-filter">
     <option value="">All sources</option>
@@ -155,12 +87,23 @@
     <option value="kept">Kept only</option>
     <option value="excluded">Excluded only</option>
   </select>
-  <div class="stats" id="stats">loading…</div>
+  <div class="header-right">
+    <button class="btn-sync"  id="sync-btn">⟳ Sync from intervals.icu</button>
+    <button class="btn-regen" id="regen-btn">▶ Regenerate heatmap</button>
+    <button id="clear-btn" style="background:#2a0a0a;color:#ff9999;border-color:#6a2020;padding:5px 13px;font-size:12px;" title="Delete all cached intervals.icu data and force a full re-download on next sync">⚠ Clear cache</button>
+    <div class="stats" id="stats">loading…</div>
+  </div>
 </header>
+
+<div id="regen-progress"><div id="regen-bar"></div></div>
+<div id="banner"></div>
+
 <div class="hint">
-  Changes are written to <code>cache/heatmap_overrides.json</code>. Run
-  <code>make run</code> afterwards to rebuild the heatmap with the new state.
+  <strong>Sync</strong> downloads missing activities from intervals.icu into the cache.
+  <strong>Regenerate</strong> rebuilds the heatmap tiles from the cache — do this after syncing or excluding activities.
+  The heatmap only shows activities with GPS data; activities without GPS (indoor runs, treadmill, etc.) are downloaded to the cache but not drawn on the map — this is normal.
 </div>
+
 <table id="tbl">
   <thead>
     <tr>
@@ -178,7 +121,6 @@
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
-  <tbody></tbody>
 </table>
 
 <script>
@@ -202,21 +144,6 @@ function showBanner(msg, type = "info") {
 function hideBanner() { banner.style.display = "none"; }
 
 // ── Table render ─────────────────────────────────────────────────────────────
-function fmtNum(v, digits = 0) {
-  if (v == null || isNaN(v)) return "—";
-  return Number(v).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
-function fmtTime(s) {
-  if (s == null || isNaN(s)) return "—";
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  return h ? `${h}h ${m}m` : `${m}m`;
-}
-function fmtDate(iso) {
-  if (!iso) return "—";
-  return iso.slice(0, 10);
-}
-
 function applyFiltersAndSort() {
   const f = state.filter.toLowerCase();
   let out = state.rows.filter(r => {
@@ -232,11 +159,6 @@ function applyFiltersAndSort() {
     if (va == null && vb == null) return 0;
     if (va == null) return 1; if (vb == null) return -1;
     return (va < vb ? -1 : va > vb ? 1 : 0) * (state.asc ? 1 : -1);
-    if (va == null) return 1;
-    if (vb == null) return -1;
-    if (va < vb) return state.asc ? -1 : 1;
-    if (va > vb) return state.asc ? 1 : -1;
-    return 0;
   });
   return out;
 }
@@ -248,13 +170,6 @@ function render() {
     const elev = r.elevation_gain_m == null ? "—" : Math.round(r.elevation_gain_m);
     const reimportBtn = r.source === "intervals"
       ? `<button data-act="reimport" data-id="${r.id}" title="Re-download FIT file from intervals.icu">re-import</button>`
-  const tbody = document.querySelector("#tbl tbody");
-  const rows = applyFiltersAndSort();
-  tbody.innerHTML = rows.map(r => {
-    const kmStr = r.distance_m == null ? "—" : (r.distance_m / 1000).toFixed(2);
-    const elevStr = r.elevation_gain_m == null ? "—" : Math.round(r.elevation_gain_m);
-    const reimport = r.source === "intervals"
-      ? `<button data-act="reimport" data-id="${r.id}">re-import</button>`
       : "";
     const url = r.source === "strava"
       ? `https://www.strava.com/activities/${r.id}`
@@ -276,19 +191,6 @@ function render() {
       <td class="actions">
         <button data-act="exclude">${r.excluded ? "include" : "exclude"}</button>
         ${reimportBtn}
-    return `<tr class="${r.excluded ? 'excluded' : ''}" data-id="${r.id}" data-source="${r.source}">
-      <td>${fmtDate(r.date)}</td>
-      <td><span class="src src-${r.source}">${r.source}</span></td>
-      <td>${r.id}</td>
-      <td class="name" title="${r.name.replace(/"/g, '&quot;')}">${r.name || ""}</td>
-      <td>${r.type || ""}</td>
-      <td class="num">${kmStr}</td>
-      <td class="num">${fmtTime(r.moving_time_s)}</td>
-      <td class="num">${elevStr}</td>
-      <td><a href="${url}" target="_blank" rel="noopener">open ↗</a></td>
-      <td class="actions">
-        <button data-act="exclude">${r.excluded ? "include" : "exclude"}</button>
-        ${reimport}
       </td>
     </tr>`;
   }).join("");
@@ -324,21 +226,11 @@ async function load() {
       <small>Check the add-on Log tab for details, or <a href="api/debug" target="_blank" style="color:var(--warn)">open debug info ↗</a> to diagnose.</small>`, "error");
     document.getElementById("stats").textContent = "—";
   }
-  document.getElementById("stats").textContent =
-    `${shown}/${total} shown · ${exc} excluded · ${total - exc} kept`;
-}
-
-async function load() {
-  const res = await fetch("/api/activities");
-  state.rows = await res.json();
-  render();
 }
 
 async function postJson(url, body) {
   const res = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   return res.json();
@@ -347,8 +239,6 @@ async function postJson(url, body) {
 // ── Table interactions ───────────────────────────────────────────────────────
 document.addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-act]");
-document.addEventListener("click", async (e) => {
-  const btn = e.target.closest("button");
   if (!btn) return;
   const tr = btn.closest("tr");
   const id = tr?.dataset.id;
@@ -366,25 +256,6 @@ document.addEventListener("click", async (e) => {
     const r = await postJson("api/reimport", { id });
     if (r.ok) { btn.textContent = `done`; setTimeout(load, 800); }
     else { btn.textContent = "error"; alert(r.error || "re-import failed"); btn.disabled = false; }
-  const act = btn.dataset.act;
-  if (act === "exclude") {
-    const row = state.rows.find(r => r.id === id && r.source === source);
-    btn.disabled = true;
-    await postJson("/api/exclude", { source, ids: [id], excluded: !row.excluded });
-    row.excluded = !row.excluded;
-    render();
-  } else if (act === "reimport") {
-    if (!confirm(`Re-import ${id}? This evicts caches and re-downloads the FIT.`)) return;
-    btn.disabled = true;
-    btn.textContent = "syncing…";
-    const r = await postJson("/api/reimport", { id });
-    if (r.ok) {
-      btn.textContent = `ok (+${r.downloaded})`;
-      setTimeout(load, 800);
-    } else {
-      btn.textContent = "error";
-      alert(r.error || "re-import failed");
-    }
   }
 });
 
@@ -392,8 +263,6 @@ document.querySelectorAll("th.sortable").forEach(th => {
   th.addEventListener("click", () => {
     const k = th.dataset.sort;
     if (state.sort === k) state.asc = !state.asc; else { state.sort = k; state.asc = false; }
-    if (state.sort === k) state.asc = !state.asc;
-    else { state.sort = k; state.asc = false; }
     render();
   });
 });
