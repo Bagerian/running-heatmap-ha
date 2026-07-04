@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Running Heatmap — Admin</title>
+<style>
+  :root {
+    --bg: #111; --panel: rgba(20,20,20,0.97); --border: rgba(255,255,255,0.08);
+    --muted: #888; --fg: #eee; --accent: #ffb14b; --warn: #ff6b6b;
+    --green: #4ade80; --blue: #76d3ff;
+  }
+  html, body { margin:0; padding:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:13px; }
+
+  /* ── Header ── */
+  header { position:sticky; top:0; z-index:10; background:var(--panel);
+    border-bottom:1px solid var(--border); padding:10px 16px;
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:15px; font-weight:600; flex-shrink:0; }
+  input[type=search], select {
+    background:#1a1a1a; color:var(--fg); border:1px solid var(--border);
+    border-radius:6px; padding:5px 8px; font-size:13px; font-family:inherit; }
+  input[type=search] { width:200px; }
+  .header-right { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .stats { color:var(--muted); font-size:12px; white-space:nowrap; }
+
+  /* ── Buttons ── */
+  button { background:#222; color:var(--fg); border:1px solid var(--border);
+    border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;
+    font-family:inherit; transition:background 0.15s; }
+  button:hover { background:#2a2a2a; border-color:rgba(255,255,255,0.2); }
+  button:disabled { opacity:0.45; cursor:not-allowed; }
+  .btn-sync  { background:#0a3c4a; color:var(--blue);  border-color:#1a6c8a; padding:5px 13px; }
+  .btn-regen { background:#0a2e1a; color:var(--green); border-color:#1a6c3a; padding:5px 13px; }
+  .btn-sync:hover  { background:#0d4f62; }
+  .btn-regen:hover { background:#0d3d22; }
+
+  /* ── Banner ── */
+  #banner { display:none; padding:10px 16px; font-size:12px;
+    border-bottom:1px solid var(--border); line-height:1.6; }
+  #banner.info  { background:#0a1e2a; color:var(--blue); }
+  #banner.ok    { background:#0a1e0f; color:var(--green); }
+  #banner.error { background:#2a0a0a; color:var(--warn); }
+  #banner.warn  { background:#2a1a00; color:#ffa940; }
+
+  /* ── Hint bar ── */
+  .hint { color:var(--muted); font-size:11px; padding:8px 16px;
+    border-bottom:1px solid var(--border); line-height:1.6; }
+  .hint code { background:#1a1a1a; padding:1px 5px; border-radius:3px; }
+  .hint strong { color:#bbb; }
+
+  /* ── Table ── */
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead { position:sticky; top:48px; z-index:5; background:#181818; }
+  th, td { padding:6px 10px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:0.04em; cursor:pointer; }
+  th.sortable:hover { color:var(--fg); }
+  tr.excluded td { color:#555; text-decoration:line-through; }
+  td.name { max-width:300px; overflow:hidden; text-overflow:ellipsis; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.actions { text-align:right; }
+  .no-gps { font-size:10px; color:#555; margin-left:4px; }
+  .src { padding:1px 6px; border-radius:4px; font-size:10px; font-weight:700; }
+  .src-strava    { background:#4a2e0a; color:#ffba76; }
+  .src-intervals { background:#0a3c4a; color:#76d3ff; }
+  td a { color:var(--accent); text-decoration:none; }
+  td a:hover { text-decoration:underline; }
+  tr.excluded td a { color:#555; }
+
+  /* ── Progress bar ── */
+  #regen-progress { display:none; height:3px; background:#1a1a1a; }
+  #regen-bar { height:100%; width:0%; background:var(--green); transition:width 0.4s; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗺 Running Heatmap — Activity Admin</h1>
+  <input type="search" id="filter" placeholder="filter by name / id…">
+  <select id="src-filter">
+    <option value="">All sources</option>
+    <option value="strava">Strava only</option>
+    <option value="intervals">Intervals only</option>
+  </select>
+  <select id="excl-filter">
+    <option value="">All states</option>
+    <option value="kept">Kept only</option>
+    <option value="excluded">Excluded only</option>
+  </select>
+  <div class="header-right">
+    <button class="btn-sync"  id="sync-btn">⟳ Sync from intervals.icu</button>
+    <button class="btn-regen" id="regen-btn">▶ Regenerate heatmap</button>
+    <button id="clear-btn" style="background:#2a0a0a;color:#ff9999;border-color:#6a2020;padding:5px 13px;font-size:12px;" title="Delete all cached intervals.icu data and force a full re-download on next sync">⚠ Clear cache</button>
+    <div class="stats" id="stats">loading…</div>
+  </div>
+</header>
+
+<div id="regen-progress"><div id="regen-bar"></div></div>
+<div id="banner"></div>
+
+<div class="hint">
+  <strong>Sync</strong> downloads missing activities from intervals.icu into the cache.
+  <strong>Regenerate</strong> rebuilds the heatmap tiles from the cache — do this after syncing or excluding activities.
+  The heatmap only shows activities with GPS data; activities without GPS (indoor runs, treadmill, etc.) are downloaded to the cache but not drawn on the map — this is normal.
+</div>
+
+<table id="tbl">
+  <thead>
+    <tr>
+      <th class="sortable" data-sort="date">Date</th>
+      <th>Source</th>
+      <th>ID</th>
+      <th class="sortable" data-sort="name">Name</th>
+      <th>Type</th>
+      <th class="sortable num" data-sort="distance_m">Dist (km)</th>
+      <th class="sortable num" data-sort="moving_time_s">Time</th>
+      <th class="sortable num" data-sort="elevation_gain_m">Elev (m)</th>
+      <th>GPS</th>
+      <th>Link</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+const state = { rows: [], sort: "date", asc: false, filter: "", src: "", excl: "" };
+
+// ── Formatting ───────────────────────────────────────────────────────────────
+function fmtDate(iso) { return iso ? iso.slice(0, 10) : "—"; }
+function fmtTime(s) {
+  if (s == null || isNaN(s)) return "—";
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── Banner ───────────────────────────────────────────────────────────────────
+const banner = document.getElementById("banner");
+function showBanner(msg, type = "info") {
+  banner.className = type;
+  banner.style.display = "block";
+  banner.innerHTML = msg;
+}
+function hideBanner() { banner.style.display = "none"; }
+
+// ── Table render ─────────────────────────────────────────────────────────────
+function applyFiltersAndSort() {
+  const f = state.filter.toLowerCase();
+  let out = state.rows.filter(r => {
+    if (state.src && r.source !== state.src) return false;
+    if (state.excl === "kept" && r.excluded) return false;
+    if (state.excl === "excluded" && !r.excluded) return false;
+    if (f && !(r.name.toLowerCase().includes(f) || r.id.includes(f))) return false;
+    return true;
+  });
+  const k = state.sort;
+  out.sort((a, b) => {
+    const va = a[k], vb = b[k];
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1; if (vb == null) return -1;
+    return (va < vb ? -1 : va > vb ? 1 : 0) * (state.asc ? 1 : -1);
+  });
+  return out;
+}
+
+function render() {
+  const rows = applyFiltersAndSort();
+  document.getElementById("tbody").innerHTML = rows.map(r => {
+    const km = r.distance_m == null ? "—" : (r.distance_m / 1000).toFixed(2);
+    const elev = r.elevation_gain_m == null ? "—" : Math.round(r.elevation_gain_m);
+    const reimportBtn = r.source === "intervals"
+      ? `<button data-act="reimport" data-id="${r.id}" title="Re-download FIT file from intervals.icu">re-import</button>`
+      : "";
+    const url = r.source === "strava"
+      ? `https://www.strava.com/activities/${r.id}`
+      : `https://intervals.icu/activities/${r.id}`;
+    const gpsIcon = r.has_file
+      ? (r.has_gps !== false ? "✓" : '<span style="color:#555" title="No GPS data — not drawn on map">✗ no GPS</span>')
+      : '<span style="color:#555">no file</span>';
+    return `<tr class="${r.excluded ? "excluded" : ""}" data-id="${r.id}" data-source="${r.source}">
+      <td>${fmtDate(r.date)}</td>
+      <td><span class="src src-${r.source}">${r.source}</span></td>
+      <td style="font-size:10px;color:#888">${r.id}</td>
+      <td class="name" title="${r.name.replace(/"/g, "&quot;")}">${r.name || ""}</td>
+      <td>${r.type || ""}</td>
+      <td class="num">${km}</td>
+      <td class="num">${fmtTime(r.moving_time_s)}</td>
+      <td class="num">${elev}</td>
+      <td>${gpsIcon}</td>
+      <td><a href="${url}" target="_blank" rel="noopener">↗</a></td>
+      <td class="actions">
+        <button data-act="exclude">${r.excluded ? "include" : "exclude"}</button>
+        ${reimportBtn}
+      </td>
+    </tr>`;
+  }).join("");
+
+  const total = state.rows.length;
+  const shown = rows.length;
+  const exc = state.rows.filter(r => r.excluded).length;
+  const noGps = state.rows.filter(r => r.has_file && r.has_gps === false).length;
+  document.getElementById("stats").textContent =
+    `${shown}/${total} shown · ${exc} excluded · ${noGps > 0 ? noGps + " no-GPS · " : ""}${total - exc} kept`;
+}
+
+// ── Data loading ─────────────────────────────────────────────────────────────
+async function load() {
+  document.getElementById("stats").textContent = "loading…";
+  try {
+    const res = await fetch("api/activities");
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        detail = j.error || detail;
+        if (j.traceback) console.error("Server traceback:\n" + j.traceback);
+      } catch (_) {}
+      throw new Error(detail);
+    }
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    state.rows = data;
+    render();
+  } catch (err) {
+    showBanner(`✗ Could not load activities: ${err.message}<br>
+      <small>Check the add-on Log tab for details, or <a href="api/debug" target="_blank" style="color:var(--warn)">open debug info ↗</a> to diagnose.</small>`, "error");
+    document.getElementById("stats").textContent = "—";
+  }
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+// ── Table interactions ───────────────────────────────────────────────────────
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const tr = btn.closest("tr");
+  const id = tr?.dataset.id;
+  const source = tr?.dataset.source;
+
+  if (btn.dataset.act === "exclude") {
+    const row = state.rows.find(r => r.id === id && r.source === source);
+    btn.disabled = true;
+    await postJson("api/exclude", { source, ids: [id], excluded: !row.excluded });
+    row.excluded = !row.excluded;
+    render();
+  } else if (btn.dataset.act === "reimport") {
+    if (!confirm(`Re-import ${id}?\nThis deletes the cached FIT file and re-downloads it from intervals.icu.`)) return;
+    btn.disabled = true; btn.textContent = "syncing…";
+    const r = await postJson("api/reimport", { id });
+    if (r.ok) { btn.textContent = `done`; setTimeout(load, 800); }
+    else { btn.textContent = "error"; alert(r.error || "re-import failed"); btn.disabled = false; }
+  }
+});
+
+document.querySelectorAll("th.sortable").forEach(th => {
+  th.addEventListener("click", () => {
+    const k = th.dataset.sort;
+    if (state.sort === k) state.asc = !state.asc; else { state.sort = k; state.asc = false; }
+    render();
+  });
+});
+document.getElementById("filter").addEventListener("input", e => { state.filter = e.target.value; render(); });
+document.getElementById("src-filter").addEventListener("change", e => { state.src = e.target.value; render(); });
+document.getElementById("excl-filter").addEventListener("change", e => { state.excl = e.target.value; render(); });
+
+// ── Sync button ──────────────────────────────────────────────────────────────
+document.getElementById("sync-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("sync-btn");
+  if (!confirm(
+    "This will fetch your full intervals.icu history (2010 → today).\n" +
+    "Already-downloaded activities are skipped.\n\n" +
+    "After syncing, click 'Regenerate heatmap' to update the map. Continue?"
+  )) return;
+
+  btn.disabled = true;
+  btn.textContent = "⟳ Syncing…";
+  showBanner("⟳ Fetching activity history from intervals.icu — this may take a few minutes…", "info");
+
+  try {
+    const r = await postJson("api/sync", {});
+    if (r.ok) {
+      if (r.downloaded > 0) {
+        showBanner(
+          `✓ Sync complete — <strong>${r.downloaded} new ${r.downloaded === 1 ? "activity" : "activities"}</strong> downloaded.` +
+          ` Now click <strong>▶ Regenerate heatmap</strong> to update the map.`,
+          "ok"
+        );
+        btn.textContent = `✓ Done (+${r.downloaded})`;
+        setTimeout(load, 800);
+      } else {
+        showBanner("✓ Already up to date — no new activities found.", "ok");
+        btn.textContent = "⟳ Sync from intervals.icu";
+        btn.disabled = false;
+      }
+    } else {
+      showBanner(`✗ Sync failed: ${r.error || "unknown error"}`, "error");
+      btn.textContent = "⟳ Sync from intervals.icu";
+      btn.disabled = false;
+    }
+  } catch (err) {
+    showBanner(`✗ Network error: ${err.message}`, "error");
+    btn.textContent = "⟳ Sync from intervals.icu";
+    btn.disabled = false;
+  }
+});
+
+// ── Regenerate button ────────────────────────────────────────────────────────
+let regenPollInterval = null;
+
+async function pollRegenStatus() {
+  try {
+    const s = await fetch("api/regen-status").then(r => r.json());
+    if (!s.running) {
+      clearInterval(regenPollInterval);
+      regenPollInterval = null;
+      const bar = document.getElementById("regen-bar");
+      document.getElementById("regen-progress").style.display = "none";
+      bar.style.width = "0%";
+      const regenBtn = document.getElementById("regen-btn");
+      regenBtn.disabled = false;
+      regenBtn.textContent = "▶ Regenerate heatmap";
+      if (s.last === "ok") {
+        showBanner("✓ Heatmap regenerated! <a href='../heatmap.html' target='_blank' style='color:var(--green)'>Open heatmap ↗</a> (you may need to hard-refresh: Ctrl+Shift+R)", "ok");
+      } else if (s.last === "error") {
+        showBanner(`✗ Regeneration failed: ${s.message}`, "error");
+      }
+    }
+  } catch (_) {}
+}
+
+document.getElementById("regen-btn").addEventListener("click", async () => {
+  const btn = document.getElementById("regen-btn");
+  btn.disabled = true;
+  btn.textContent = "▶ Regenerating…";
+  showBanner("⟳ Regenerating heatmap — this may take several minutes for many activities…", "info");
+
+  const progress = document.getElementById("regen-progress");
+  const bar = document.getElementById("regen-bar");
+  progress.style.display = "block";
+  // Animate a fake progress bar (we can't know real progress)
+  let pct = 5;
+  bar.style.width = pct + "%";
+  const fakeProgress = setInterval(() => {
+    pct = Math.min(pct + (90 - pct) * 0.05, 90);
+    bar.style.width = pct + "%";
+  }, 1000);
+
+  try {
+    const r = await postJson("api/regenerate", {});
+    if (r.ok) {
+      // Poll until done
+      regenPollInterval = setInterval(pollRegenStatus, 3000);
+    } else {
+      clearInterval(fakeProgress);
+      progress.style.display = "none";
+      showBanner(`✗ Could not start regeneration: ${r.error || "unknown error"}`, "error");
+      btn.disabled = false;
+      btn.textContent = "▶ Regenerate heatmap";
+    }
+  } catch (err) {
+    clearInterval(fakeProgress);
+    progress.style.display = "none";
+    showBanner(`✗ Network error: ${err.message}`, "error");
+    btn.disabled = false;
+    btn.textContent = "▶ Regenerate heatmap";
+  }
+  // Stop the fake progress when real polling takes over
+  setTimeout(() => clearInterval(fakeProgress), 5000);
+});
+
+// ── Clear cache button ───────────────────────────────────────────────────────
+document.getElementById("clear-btn").addEventListener("click", async () => {
+  if (!confirm(
+    "⚠ This will DELETE all downloaded intervals.icu FIT files and the index.\n\n" +
+    "The heatmap will be blank until you Sync and Regenerate again.\n\n" +
+    "Your Strava data is NOT affected.\n\nContinue?"
+  )) return;
+  const btn = document.getElementById("clear-btn");
+  btn.disabled = true; btn.textContent = "Clearing…";
+  try {
+    const r = await postJson("api/clear-cache", {});
+    if (r.ok) {
+      showBanner("✓ Cache cleared. Click ⟳ Sync to re-download all activities, then ▶ Regenerate to rebuild the heatmap.", "warn");
+      state.rows = []; render();
+    } else {
+      showBanner("✗ Clear failed: " + (r.error || "unknown"), "error");
+    }
+  } catch (err) {
+    showBanner("✗ Network error: " + err.message, "error");
+  }
+  btn.disabled = false; btn.textContent = "⚠ Clear cache";
+});
+
+load();
+</script>
+</body>
+</html>
