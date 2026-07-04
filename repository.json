@@ -1,5 +1,8 @@
 {
   "name": "Running Heatmap Add-on",
+  "url": "https://github.com/Bagerian/heatmap",
+  "maintainer": "Bagerian"
+}
   "url": "https://github.com/Bagerian/running-heatmap-ha",
   "maintainer": "Bagerian"
 }
