@@ -1,0 +1,31 @@
+configuration:
+  intervals_icu_api_key:
+    name: intervals.icu API Key
+    description: >-
+      Your intervals.icu API key. Found at intervals.icu → Settings → Developer.
+      Leave blank if you only use Strava.
+  intervals_icu_athlete_id:
+    name: intervals.icu Athlete ID
+    description: >-
+      Your intervals.icu Athlete ID. Found at intervals.icu → Settings → Developer.
+      Starts with "i" followed by numbers (e.g. i12345).
+  stadia_api_key:
+    name: Stadia Maps API Key
+    description: >-
+      Optional. Get a free key at client.stadiamaps.com (200k tile requests/month free).
+      Without it, the Stadia basemaps may stop working after heavy use.
+  home_lat:
+    name: Home Latitude
+    description: >-
+      Your home location latitude (e.g. 52.4064 for Poznań).
+      Set to 0 to auto-detect from your activities. Required if you use radius filtering.
+  home_lon:
+    name: Home Longitude
+    description: >-
+      Your home location longitude (e.g. 16.9252 for Poznań).
+      Set to 0 to auto-detect from your activities.
+  radius_km:
+    name: Radius Filter (km)
+    description: >-
+      Only include activities that started within this many kilometres of home.
+      Set to 0 to include all activities worldwide.
