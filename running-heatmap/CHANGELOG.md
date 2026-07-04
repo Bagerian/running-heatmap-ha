@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.13] - 2026-07-04
+
+### Fixed
+- Fixed 404 error on the Activity Admin page. The file `serve.py` now correctly handles API routes and the admin portal.
+
+---
+
+## [1.0.6] - 2026-06-27
+
+### Fixed
+- **Admin panel HTTP 500 resolved** — the previous fix attempted to load config
+  by importing `main_ha.py`, but that file runs the full heatmap generator when
+  imported, causing it to crash and return 500. Config is now built directly
+  from environment variables (`HEATMAP_STRAVA_DIR`, `HEATMAP_ICU_CACHE_DIR`)
+  that are set by `run.sh` at startup — no file import needed.
+
+---
+
 ## [1.0.12] - 2026-06-27
 
 ### Fixed
@@ -14,25 +32,3 @@
   background subprocess after the server is already up. A "Generating your
   heatmap…" placeholder page with auto-refresh is shown until the first
   render completes.
-
----
-
-## [1.0.5] - 2026-06-27
-
-### Fixed
-- **Admin panel now lists activities** — config was not being passed correctly
-  to the admin server; it now loads directly from the generated config file.
-- **Sync no longer requires a restart** — added a ▶ Regenerate heatmap button
-  in the admin panel that rebuilds the heatmap tiles in the background without
-  restarting the add-on. A progress bar shows while it runs.
-- **Explained GPS-less activity gap** — activities without GPS data (indoor
-  runs, treadmill, gym workouts) are downloaded to the cache but cannot be
-  drawn on the map. The activity count difference between "downloaded" and
-  "shown on map" is normal and expected. The admin panel now shows a GPS
-  column so you can see which activities have no location data.
-
-### Changed
-- Admin panel redesigned with clearer action buttons, better status messages,
-  and a hint bar explaining the sync → regenerate workflow.
-- Sync success message now says "click Regenerate heatmap" instead of
-  "restart the add-on".

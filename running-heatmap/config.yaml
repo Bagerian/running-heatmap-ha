@@ -1,6 +1,6 @@
 name: "Running Heatmap"
 description: "Generate interactive running heatmaps from your Strava export and/or intervals.icu data"
-version: "1.0.12"
+version: "1.0.13"
 slug: "running_heatmap"
 init: false
 
