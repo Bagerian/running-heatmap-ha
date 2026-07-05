@@ -216,6 +216,41 @@ class HeatmapHandler(SimpleHTTPRequestHandler):
         global _regen_status
         plain = self._plain_path()
 
+        if plain == "/admin/api/upload-strava":
+            import zipfile
+            import io
+            import shutil
+            try:
+                content_length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(content_length)
+
+                # In a real multipart form, we'd have to parse it.
+                # For simplicity, if we just POST the raw zip file as the body from JS, we can parse it directly.
+                # But HTML file inputs usually send multipart. Let's do a basic parse or expect raw binary.
+
+                # Wait, if we use JS fetch, we can send the raw file as the body.
+
+                strava_dir = os.environ.get("HEATMAP_STRAVA_DIR", "/share/running_heatmap/strava_export")
+                strava_path = Path(strava_dir)
+                strava_path.mkdir(parents=True, exist_ok=True)
+
+                # Try to read as ZIP
+                try:
+                    with zipfile.ZipFile(io.BytesIO(body)) as z:
+                        z.extractall(strava_path)
+                    self._send_json({"ok": True, "message": "Extracted ZIP successfully."})
+                except zipfile.BadZipFile:
+                    # Maybe it's just the activities.csv?
+                    # Let's check if it starts with the CSV header
+                    if b"Activity ID,Activity Date" in body:
+                        (strava_path / "activities.csv").write_bytes(body)
+                        self._send_json({"ok": True, "message": "Saved activities.csv successfully."})
+                    else:
+                        self._send_json({"ok": False, "error": "Not a valid Strava export ZIP or activities.csv"}, status=400)
+            except Exception as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=500)
+            return
+
         if plain == "/admin/api/exclude":
             try:
                 data = self._read_json()

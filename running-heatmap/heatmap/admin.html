@@ -87,7 +87,13 @@
     <option value="kept">Kept only</option>
     <option value="excluded">Excluded only</option>
   </select>
-  <div class="header-right">
+
+  <div class="header-right" style="display:flex; gap:10px; align-items:center;">
+    <div class="upload-wrapper" style="position:relative; display:inline-block;">
+      <input type="file" id="strava-upload" accept=".zip,.csv" style="position:absolute; left:0; top:0; width:100%; height:100%; opacity:0; cursor:pointer;" title="Upload Strava ZIP or activities.csv">
+      <button class="btn-sync" style="pointer-events:none;">+ Upload Strava Export</button>
+    </div>
+
     <button class="btn-sync"  id="sync-btn">⟳ Sync from intervals.icu</button>
     <button class="btn-regen" id="regen-btn">▶ Regenerate heatmap</button>
     <button id="clear-btn" style="background:#2a0a0a;color:#ff9999;border-color:#6a2020;padding:5px 13px;font-size:12px;" title="Delete all cached intervals.icu data and force a full re-download on next sync">⚠ Clear cache</button>
@@ -309,6 +315,44 @@ document.getElementById("sync-btn").addEventListener("click", async () => {
     btn.textContent = "⟳ Sync from intervals.icu";
     btn.disabled = false;
   }
+});
+
+
+// ── Upload Strava ────────────────────────────────────────────────────────────
+document.getElementById("strava-upload").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const btn = e.target.nextElementSibling;
+  const origText = btn.textContent;
+
+  if (!confirm(`Upload ${file.name} to Strava Export folder?`)) {
+    e.target.value = "";
+    return;
+  }
+
+  btn.textContent = "Uploading…";
+  e.target.disabled = true;
+  showBanner(`Uploading ${file.name}…`, "info");
+
+  try {
+    const res = await fetch("api/upload-strava", {
+      method: "POST",
+      body: file
+    });
+    const r = await res.json();
+    if (r.ok) {
+      showBanner(`✓ Upload successful: ${r.message} Click ▶ Regenerate heatmap to update.`, "ok");
+      setTimeout(load, 800);
+    } else {
+      showBanner(`✗ Upload failed: ${r.error}`, "error");
+    }
+  } catch (err) {
+    showBanner(`✗ Upload failed: ${err.message}`, "error");
+  }
+
+  btn.textContent = origText;
+  e.target.disabled = false;
+  e.target.value = "";
 });
 
 // ── Regenerate button ────────────────────────────────────────────────────────

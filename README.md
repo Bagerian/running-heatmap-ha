@@ -8,7 +8,6 @@ This repository acts as a Home Assistant Add-on Repository. To install the Runni
 2. Go to **Settings** -> **Add-ons** -> **Add-on Store**.
 3. Click the three dots (menu) in the top right corner and select **Repositories**.
 4. Enter the URL of this repository: `https://github.com/Bagerian/running-heatmap-ha` and click **Add**.
-4. Enter the URL of this repository: `https://github.com/Bagerian/heatmap` and click **Add**.
 5. Once the repository is added, scroll down or search for **Running Heatmap** in the Add-on Store.
 6. Click on it and select **Install**.
 

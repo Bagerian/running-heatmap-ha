@@ -61,7 +61,10 @@ def _save_overrides(path: Path, data: dict) -> None:
 
 
 def _strava_rows(strava_dir: Path) -> list[dict]:
-    df = pd.read_csv(strava_dir / "activities.csv")
+    csv_path = strava_dir / "activities.csv"
+    if not csv_path.exists():
+        return []
+    df = pd.read_csv(csv_path)
     df = normalize(df)
     df = df[df["Filename"].notna()].copy()
     df["date"] = pd.to_datetime(df["Activity Date"], format="mixed", dayfirst=True)
