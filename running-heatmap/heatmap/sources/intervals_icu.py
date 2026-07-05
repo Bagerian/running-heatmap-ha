@@ -128,9 +128,8 @@ def sync(
 ) -> SyncResult:
     """Sync new intervals.icu activities into cache_dir.
 
-    Listing range defaults to (latest cached start_date - 7 days) → today, or
-    `date_from` → `date_to` if given. STRAVA-sourced activities are skipped
-    (API can't serve their files).
+    Fetches in annual chunks to avoid the API's per-call activity limit
+    (~200 activities). STRAVA-sourced activities are skipped.
 
     Returns download count plus canonical activity types for newly downloaded
     activities.
@@ -145,26 +144,44 @@ def sync(
     if date_from is None:
         if index:
             latest = max(e["start_date_local"][:10] for e in index)
-            # 7-day overlap to catch late-syncing activities
             date_from = (date.fromisoformat(latest) - timedelta(days=7)).isoformat()
         else:
             date_from = LISTING_OLDEST_FALLBACK
     if date_to is None:
         date_to = date.today().isoformat()
 
-    log.info("intervals.icu sync: %s → %s", date_from, date_to)
-    with IntervalsIcuClient(athlete_id, api_key) as client:
-        listing = client.list_activities(date_from, date_to)
-        log.info("intervals.icu returned %d activities in range", len(listing))
+    # Split into annual chunks so we never hit the API's per-call activity cap.
+    # intervals.icu returns at most ~200 activities per request when fetching a
+    # wide date range; chunking by year keeps each request well under that limit.
+    start = date.fromisoformat(date_from)
+    end   = date.fromisoformat(date_to)
+    chunks: list[tuple[str, str]] = []
+    chunk_start = start
+    while chunk_start <= end:
+        chunk_end = min(date(chunk_start.year, 12, 31), end)
+        chunks.append((chunk_start.isoformat(), chunk_end.isoformat()))
+        chunk_start = date(chunk_start.year + 1, 1, 1)
 
-        to_download = [a for a in listing if a.get("source") != "STRAVA" and a["id"] not in known_ids]
-        if not to_download:
+    log.info("intervals.icu sync: %s → %s (%d annual chunk(s))", date_from, date_to, len(chunks))
+
+    all_to_download: list[dict] = []
+    with IntervalsIcuClient(athlete_id, api_key) as client:
+        for chunk_from, chunk_to in chunks:
+            listing = client.list_activities(chunk_from, chunk_to)
+            log.info("  chunk %s → %s: %d activities", chunk_from, chunk_to, len(listing))
+            for a in listing:
+                if a.get("source") != "STRAVA" and a["id"] not in known_ids:
+                    all_to_download.append(a)
+                    known_ids.add(a["id"])  # deduplicate across chunks
+
+        if not all_to_download:
             log.info("intervals.icu: nothing new")
             return SyncResult(0, frozenset())
 
+        log.info("intervals.icu: %d new activities to download", len(all_to_download))
         n_new = 0
         new_types: set[str] = set()
-        for a in tqdm(to_download, desc="intervals.icu sync", unit="act"):
+        for a in tqdm(all_to_download, desc="intervals.icu sync", unit="act"):
             fit_path = activities_dir / f"{a['id']}.fit"
             if not fit_path.exists():
                 fit_path.write_bytes(client.download_fit(a["id"]))
