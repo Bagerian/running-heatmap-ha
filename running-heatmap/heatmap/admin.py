@@ -63,7 +63,7 @@ def _save_overrides(path: Path, data: dict) -> None:
 def _strava_rows(strava_dir: Path) -> list[dict]:
     csv_path = strava_dir / "activities.csv"
     if not csv_path.exists():
-        return []
+        return []  # No Strava export — intervals.icu-only setup
     df = pd.read_csv(csv_path)
     df = normalize(df)
     df = df[df["Filename"].notna()].copy()
@@ -202,6 +202,44 @@ def _evict_track_cache(track_cache_path: Path, basename: str) -> None:
     t = json.loads(track_cache_path.read_text())
     if t.pop(basename, None) is not None:
         track_cache_path.write_text(json.dumps(t))
+
+
+def sync_all_intervals(config: Config) -> dict:
+    """Sync ALL intervals.icu activities from 2010 to today.
+
+    This is a full historical fetch — it will pick up any activities that were
+    missed during previous incremental syncs (e.g. activities that existed
+    before the first sync, or activities that failed to download).
+    Already-cached activities are skipped (their FIT file exists on disk).
+    """
+    api_key = os.environ.get("INTERVALS_ICU_API_KEY")
+    athlete_id = os.environ.get("INTERVALS_ICU_ATHLETE_ID")
+    if not api_key or not athlete_id:
+        return {"ok": False, "error": "INTERVALS_ICU_API_KEY/ATHLETE_ID not set in add-on configuration"}
+
+    cache_dir = config.resolved_intervals_icu_cache_dir()
+    date_from = "2010-01-01"
+    date_to = date.today().isoformat()
+
+    log.info("Full intervals.icu resync: %s → %s", date_from, date_to)
+    try:
+        result = intervals_icu.sync(
+            cache_dir,
+            athlete_id=athlete_id,
+            api_key=api_key,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Full resync failed")
+        return {"ok": False, "error": str(exc)}
+
+    return {
+        "ok": True,
+        "downloaded": result.downloaded,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
 
 
 def reimport_intervals(config: Config, activity_id: str) -> dict:
